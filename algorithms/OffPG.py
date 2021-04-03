@@ -41,7 +41,7 @@ class Agent(nn.Module):
         states = torch.cat(transitions.state).reshape(-1,self.input_dim)
         rewards = torch.cat(transitions.reward).float()
         actions = torch.cat(transitions.action).reshape(-1, self.output_dim)
-        log_probs_behavior = torch.cat(transitions.log_prob).detach()
+        log_probs_behavior = torch.cat(transitions.log_prob)
         dones = torch.cat(transitions.done)
 
         returns = []
@@ -58,8 +58,8 @@ class Agent(nn.Module):
         log_probs_target = dists.log_prob(actions).sum(dim=1)
 
         # Calculate loss function
-        importance_ratios = torch.exp(log_probs_target - log_probs_behavior)
-        loss = - (importance_ratios * returns).mean()
+        importance_weights = torch.exp(log_probs_target - log_probs_behavior).detach()
+        loss = - (importance_weights * returns * log_probs_target).mean()
 
         self.optimizer.zero_grad()
         loss.backward()
