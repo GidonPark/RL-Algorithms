@@ -54,7 +54,7 @@ class Agent(nn.Module):
             R = r + self.gamma * R
             self.returns.append(R)
         self.returns = np.array(self.returns)
-        self.returns = (self.returns - self.returns.mean()) / self.returns.std()
+        self.returns = (self.returns - self.returns.mean()) / (self.returns.std() + 1e-5)
         loss = - self.dot_mean(self.returns, self.log_probs)
         self.optimizer.zero_grad()
         loss.backward()
