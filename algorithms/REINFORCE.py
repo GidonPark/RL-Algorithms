@@ -9,8 +9,10 @@ import gym
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class Agent(nn.Module):
-    def __init__(self, simulator, hidden_size, learning_rate, gamma, std=0.05):
+    def __init__(self,isEval, simulator, hidden_size, learning_rate, gamma, std=0.05):
         super(Agent, self).__init__()
+        self.model_save_path = "./trained_model/REINFORCE.pt"
+        self.isEval = isEval
         self.env = gym.make(simulator)
         self.input_dim = self.env.observation_space.shape[0]
         self.output_dim = self.env.action_space.shape[0]
@@ -45,6 +47,15 @@ class Agent(nn.Module):
         self.rewards.append(reward)
         self.log_probs.append(log_prob)
 
+    def model_save(self):
+        torch.save({
+            'actor_state_dict': self.state_dict(),
+        }, self.model_save_path)
+
+    def model_load(self):
+        checkpoint = torch.load(self.model_save_path)
+        self.load_state_dict(checkpoint['actor_state_dict'])
+
     def train(self):
         self.rewards.reverse()
         self.log_probs.reverse()
@@ -64,6 +75,8 @@ class Agent(nn.Module):
         self.returns = []
 
     def run(self, num_episode):
+        if self.isEval :
+            self.model_load()
         for i in range(num_episode):
             state = self.env.reset()
             state = torch.from_numpy(state).to(device).float()
@@ -72,19 +85,29 @@ class Agent(nn.Module):
             rewards = 0
             while not done:
                 self.env.render()
-                dist = self.forward(state)
-                action = dist.sample()
-                #action_excution = torch.tanh(action) * self.output_limit
-                next_state, reward, done, info = self.env.step(action_excution.cpu().data.numpy())
+                if self.isEval:
+                    dist = self.forward(state)
+                    action = dist.sample()
+                    action_excution = torch.tanh(action) * self.output_limit
+                    next_state, reward, done, info = self.env.step(action_excution.cpu().data.numpy())
+                else:
+                    dist = self.forward(state)
+                    action = dist.sample()
+                    action_excution = torch.tanh(action) * self.output_limit
+                    next_state, reward, done, info = self.env.step(action_excution.cpu().data.numpy())
+                    log_prob = dist.log_prob(action).sum(dim=-1)
+                    self.trajectory(reward, log_prob)
                 next_state = torch.from_numpy(next_state).to(device).float()
-                log_prob = dist.log_prob(action).sum(dim=-1)
-                self.trajectory(reward, log_prob)
                 state = next_state
-                rewards += reward
+                rewards += reward.item()
                 step += 1
             print('episode', i, 'step', step, 'rewards', rewards)
 
-            self.train()
+            if not self.isEval:
+                self.train()
+                if i % 2000 == 0:
+                    self.model_save()
+
 
     def dot_mean(self, x, y):
         return sum(x_i * y_i for x_i, y_i in zip(x, y)) / len(x)
