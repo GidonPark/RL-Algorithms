@@ -63,10 +63,8 @@ class Agent(nn.Module):
         self.isEval = isEval
         self.env = gym.make(simulator)
         self.input_dim = self.env.observation_space.shape[0]
-        #self.output_dim = self.env.action_space.shape[0]
-        self.output_dim = 1
-        #self.output_limit = self.env.action_space.high[0]
-        self.output_limit = 1
+        self.output_dim = self.env.action_space.shape[0]
+        self.output_limit = self.env.action_space.high[0]
         self.hidden_size = hidden_size
         self.batch_size = batch_size
         self.gamma = gamma
@@ -87,8 +85,7 @@ class Agent(nn.Module):
 
         #Optimizers
         self.actor_optimizer = optim.Adam(self.mu.parameters(), lr=self.actor_lr)
-        #self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=self.critic_lr, weight_decay=1e-2)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=self.critic_lr)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=self.critic_lr, weight_decay=1e-2)
 
         #Exploration noise process
         self.noise = OrnsteinUhlenbeckNoise(torch.zeros(self.output_dim))
@@ -118,6 +115,7 @@ class Agent(nn.Module):
             return
         transitions = self.memory.sample(self.batch_size)
         batch = self.Transition(*zip(*transitions))
+
         # Convert to tensor
         states = torch.cat(batch.state).reshape(-1,self.input_dim).float()
         rewards = torch.cat(batch.reward).float()
@@ -155,7 +153,6 @@ class Agent(nn.Module):
                     next_state, reward, done, info = self.env.step(self.output_limit * action.cpu().data.numpy())
                     next_state = torch.from_numpy(next_state).to(device).float()
                 else:
-                    #action = self.mu(state) + self.noise().to(device)
                     action = self.mu(state) + torch.FloatTensor(0.5 / math.log(i+2) * np.random.randn(self.output_dim)).to(device)
                     next_state, reward, done, info = self.env.step(np.clip(self.output_limit * action.cpu().data.numpy(), -self.output_limit, self.output_limit))
                     next_state = torch.from_numpy(next_state).to(device).float()
