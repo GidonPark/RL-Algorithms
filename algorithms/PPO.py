@@ -20,7 +20,7 @@ class Agent(nn.Module):
         self.hidden_size = hidden_size
         self.gamma = gamma
         self.lamb = lamb
-        self.actor_lr = 3e-4
+        self.actor_lr = 3e-5
         self.critic_lr = 3e-4
         self.tau = 1e-3
         self.epochs = 10

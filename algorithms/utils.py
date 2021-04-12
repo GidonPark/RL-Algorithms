@@ -7,7 +7,7 @@ import random
 import numpy as np
 
 class Actor(nn.Module):
-    def __init__(self, input_dim, hidden_size, output_dim, std=1, init_w=3e-3):
+    def __init__(self, input_dim, hidden_size, output_dim, std=0.05, init_w=3e-3):
         super(Actor, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
