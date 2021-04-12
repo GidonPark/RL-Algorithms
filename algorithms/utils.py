@@ -3,16 +3,23 @@ import torch.nn.functional as F
 import torch
 from torch.distributions import Normal
 from collections import namedtuple
-import random, math
+import random
 import numpy as np
 
 class Actor(nn.Module):
-    def __init__(self, input_dim, hidden_size, output_dim, std=1):
+    def __init__(self, input_dim, hidden_size, output_dim, std=1, init_w=3e-3):
         super(Actor, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.output_layer = nn.Linear(hidden_size, output_dim)
         self.log_std = nn.Parameter(torch.ones(output_dim) * std)
+        self.init_weigths(init_w)
+
+
+    def init_weigths(self, init_w):
+        self.fc1.weight.data = fanin_init(self.fc1.weight.data.size())
+        self.fc2.weight.data = fanin_init(self.fc2.weight.data.size())
+        self.output_layer.weight.data.uniform_(-init_w, init_w)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -23,14 +30,17 @@ class Actor(nn.Module):
         return dist
 
 class Critic(nn.Module):
-    def __init__(self, input_dim, hidden_size):
+    def __init__(self, input_dim, hidden_size, init_w=3e-3):
         super(Critic, self).__init__()
         self.fc1 = nn.Linear(input_dim, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.output_layer = nn.Linear(hidden_size, 1)
-        nn.init.uniform_(self.fc1.weight.data, a=- 1 / math.sqrt(input_dim), b=1 / math.sqrt(input_dim))
-        nn.init.uniform_(self.fc2.weight.data, a=- 1 / math.sqrt(hidden_size), b=1 / math.sqrt(hidden_size))
-        nn.init.uniform_(self.output_layer.weight.data, a = -3e-3, b=3e-3)
+        self.init_weigths(init_w)
+
+    def init_weigths(self, init_w):
+        self.fc1.weight.data = fanin_init(self.fc1.weight.data.size())
+        self.fc2.weight.data = fanin_init(self.fc2.weight.data.size())
+        self.output_layer.weight.data.uniform_(-init_w, init_w)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
