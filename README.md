@@ -1,8 +1,5 @@
 # RL-Algorithms
 
-![Generic badge](https://img.shields.io/badge/python-3.6-red.svg)
-![Generic badge](https://img.shields.io/badge/pytorch-1.7.1-blue.svg)
-![Generic badge](https://img.shields.io/badge/mujoco-py-2.0.2.13-yellow.svg)
 
 Implementation Reinforcement Algorithms with Mujoco simulation environments 
 
