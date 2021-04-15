@@ -3,12 +3,12 @@ import torch.nn as nn
 import torch.optim as optim
 from collections import namedtuple
 import gym
-from algorithms.utils import Actor, Critic
+from algorithms.utils import Actor, ReplayBuffer
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class Agent(nn.Module):
-    def __init__(self, isEval, simulator, hidden_size, learning_rate, gamma, behavior_update ,std=0.05):
+    def __init__(self, isEval, simulator, hidden_size, learning_rate, gamma, capacity, batch_size ,behavior_update ,std=0.05):
         super(Agent, self).__init__()
         self.model_save_path = "./trained_model/OffPG.pt"
         self.isEval = isEval
@@ -20,9 +20,15 @@ class Agent(nn.Module):
         self.learning_rate = learning_rate
         self.gamma = gamma
         self.behavior_update = behavior_update
+        self.step = 0
+        self.tau = 1e-3
+        self.epochs = 10
+        self.batch_size = batch_size
 
-        self.Transition = namedtuple('Transition', ('state', 'action', 'reward', 'log_prob', 'done'))
-        self.memory = []
+
+        self.memory = ReplayBuffer(capacity)
+        self.Transition = namedtuple('Transition',
+                                     ('state', 'action', 'next_state', 'reward', 'done'))
 
         self.target_policy = Actor(self.input_dim, self.hidden_size, self.output_dim, std=std).to(device)
         self.behavior_policy = Actor(self.input_dim, self.hidden_size, self.output_dim, std=std).to(device)
@@ -30,9 +36,9 @@ class Agent(nn.Module):
 
         self.optimizer = optim.Adam(self.target_policy.parameters(), lr=self.learning_rate)
 
-
-    def trajectory(self, *args):
-        self.memory.append(self.Transition(*args))
+    def soft_update(self, net, net_target):
+        for param_target, param in zip(net_target.parameters(), net.parameters()):
+            param_target.data.copy_(param_target.data * (1.0 - self.tau) + param.data * self.tau)
 
     def model_save(self):
         torch.save({
@@ -44,14 +50,16 @@ class Agent(nn.Module):
         self.behavior_policy.load_state_dict(checkpoint['actor_state_dict'])
 
     def train(self):
-        transitions = self.Transition(*zip(*self.memory))
+        if len(self.memory) < self.batch_size:
+            return
+        transitions = self.memory.sample(self.batch_size)
+        batch = self.Transition(*zip(*transitions))
 
         # Convert to tensor
-        states = torch.cat(transitions.state).reshape(-1,self.input_dim)
-        rewards = torch.cat(transitions.reward).float()
-        actions = torch.cat(transitions.action).reshape(-1, self.output_dim)
-        log_probs_behavior = torch.cat(transitions.log_prob)
-        dones = torch.cat(transitions.done)
+        states = torch.cat(batch.state).reshape(-1,self.input_dim)
+        rewards = torch.cat(batch.reward).float()
+        actions = torch.cat(batch.action).reshape(-1, self.output_dim)
+        dones = torch.cat(batch.done)
 
         returns = []
 
@@ -63,17 +71,20 @@ class Agent(nn.Module):
         returns = returns - returns.mean() / (returns.std() + 1e-5)
 
         # Calculate log_probs of target policy
-        dists = self.target_policy(states)
-        log_probs_target = dists.log_prob(actions).sum(dim=1)
+        for i in range(self.epochs):
+            dists = self.target_policy(states)
+            log_probs_target = dists.log_prob(actions).sum(dim=1)
+            dists_behavior = self.behavior_policy(states)
+            log_probs_behavior = dists_behavior.log_prob(actions).sum(dim=1).detach()
 
-        # Calculate loss function
-        importance_weights = torch.exp(log_probs_target - log_probs_behavior).detach()
-        loss = - (importance_weights * returns * log_probs_target).mean()
+            # Calculate loss function
+            importance_weights = torch.exp(log_probs_target - log_probs_behavior)
+            loss = - (importance_weights * returns * log_probs_target).mean()
 
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-        self.memory = []
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+        self.soft_update(self.target_policy, self.behavior_policy)
 
     def run(self, num_episode):
         if self.isEval :
@@ -98,17 +109,16 @@ class Agent(nn.Module):
                     action_excution = torch.tanh(action) * self.output_limit
                     next_state, reward, done, info = self.env.step(action_excution.cpu().data.numpy())
                     next_state = torch.from_numpy(next_state).to(device).float()
-                    log_prob = dist.log_prob(action).sum().unsqueeze(dim=0)
                     reward = torch.tensor([reward], device=device)
                     done = torch.tensor([done], device=device)
-                    self.trajectory(state, action , reward, log_prob, done)
+                    self.memory.push(state, action , next_state, reward, done)
+                    self.step += 1
                 total_rewards += reward.item()
                 state = next_state
                 step += 1
             print('episode', i, 'step', step, 'total_rewards', total_rewards)
-            if not self.isEval:
+            if not self.isEval :
                 self.train()
-                if i % 2000 == 0:
-                    self.model_save()
-                if i % self.behavior_update == 0:
-                    self.behavior_policy.load_state_dict(self.target_policy.state_dict())
+                if i % 2000 == 0: self.model_save()
+
+
